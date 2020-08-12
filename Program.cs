@@ -9,17 +9,18 @@ namespace COMPortReader
 {
     public class PortChat
     {
-        static int count = 0;
-
         private static bool _continue;
         private static SerialPort _serialPort;
+        static string ExcelName;
+        static string SaveDirectory;
 
         public static void Main()
         {
             string message;
+            
             StringComparer stringComparer = StringComparer.OrdinalIgnoreCase;
-            Thread readThread = new Thread(Read);
 
+            Thread readThread = new Thread(Read);
 
             // Create a new SerialPort object with default settings.
             _serialPort = new SerialPort();
@@ -30,6 +31,10 @@ namespace COMPortReader
             // Set the read/write timeouts
             _serialPort.ReadTimeout = 500;
             _serialPort.WriteTimeout = 500;
+
+            // Set excel name
+            ExcelName = SetExcelName("test.xlsx");
+            SaveDirectory = SetDirectory(Directory.GetCurrentDirectory());
 
             _serialPort.Open();
             _continue = true;
@@ -49,7 +54,7 @@ namespace COMPortReader
 
             readThread.Join();
             _serialPort.Close();
-            Console.WriteLine("{0},{1}",count,Directory.GetCurrentDirectory());
+            Console.WriteLine(Directory.GetCurrentDirectory());
         }
 
         public static string getBetween(string strSource, string strStart, string strEnd)
@@ -69,10 +74,12 @@ namespace COMPortReader
             return String.Empty;
         }
 
+        static int ReceiveCount = 0;
+
         public static void Read()
         {
             DataTable mytable = new DataTable();
-            mytable.Columns.Add("Interrupt", typeof(string));
+            mytable.Columns.Add("SNR (unit)", typeof(int));
             while (_continue)
             {
                 try
@@ -81,15 +88,17 @@ namespace COMPortReader
                     Console.WriteLine(message);
 
 
-                    if (message.Contains("Interrupt"))
+                    if (message.Contains("SNR "))
                     {
-                        string SNRval = getBetween(message, "Interrupt", "happens");
+                        string SNRstring = getBetween(message, "SNR ", " Payload");
+                        int SNRval;
+                        Int32.TryParse(SNRstring, out SNRval);
                         mytable.Rows.Add(SNRval);
                     }
 
                     if (message.Contains("Receive Finished"))
                     {
-                        count++;
+                        ReceiveCount++;
                     }
 
                 }
@@ -97,12 +106,11 @@ namespace COMPortReader
             }
             mytable.Columns.Add("Receipt count", typeof(int));
             DataRow countReceipt = mytable.NewRow();
-            countReceipt["Receipt count"] = count;
+            countReceipt["Receipt count"] = ReceiveCount;
             mytable.Rows.Add(countReceipt);
             var wb = new XLWorkbook();
-            wb.Worksheets.Add(mytable, "test");
-            string directory = Directory.GetCurrentDirectory();
-            wb.SaveAs(directory + "test.xlsx");
+            wb.Worksheets.Add(mytable, "result");
+            wb.SaveAs(SaveDirectory + ExcelName);
         }
 
         public static string SetPortName(string defaultPortName)
@@ -123,6 +131,34 @@ namespace COMPortReader
                 portName = defaultPortName;
             }
             return portName;
+        }
+
+        public static string SetExcelName(string defaultExcelName)
+        {
+            string ExcelName;
+
+            Console.Write("Excelname(DefaultName: {0}): ", defaultExcelName);
+            ExcelName = Console.ReadLine() + ".xlsx";
+
+            if (ExcelName == "")
+            {
+                ExcelName = defaultExcelName;
+            }
+            return ExcelName;
+        }
+
+        public static string SetDirectory(string defaultDirectory)
+        {
+            string Dirlink;
+
+            Console.Write("Set directory(Default: {0}): ", defaultDirectory);
+            Dirlink = Console.ReadLine() + "/";
+
+            if (Dirlink == "")
+            {
+                Dirlink = defaultDirectory;
+            }
+            return Dirlink;
         }
     }
 }
