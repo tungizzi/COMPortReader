@@ -7,7 +7,7 @@ using System.Threading;
 
 namespace COMPortReader
 {
-    public class PortChat
+    public class SerialPortReader
     {
         private static bool _continue;
         private static SerialPort _serialPort;
@@ -57,72 +57,81 @@ namespace COMPortReader
             Console.WriteLine(Directory.GetCurrentDirectory());
         }
 
-        public static string getBetween(string strSource, string strStart, string strEnd)
+        public class DataPackage
         {
-            const int kNotFound = -1;
+            public static int ReceiveCount = 0;
+            public static DataTable dataTable = new DataTable();
 
-            var startIdx = strSource.IndexOf(strStart);
-            if (startIdx != kNotFound)
+            public void InitDataTable()
             {
-                startIdx += strStart.Length;
-                var endIdx = strSource.IndexOf(strEnd, startIdx);
-                if (endIdx > startIdx)
+                dataTable.Columns.Add("Receipt count", typeof(int));
+            }
+
+            public static string getBetween(string strSource, string strStart, string strEnd)
+            {
+                const int kNotFound = -1;
+
+                var startIdx = strSource.IndexOf(strStart);
+                if (startIdx != kNotFound)
                 {
-                    return strSource.Substring(startIdx, endIdx - startIdx);
+                    startIdx += strStart.Length;
+                    var endIdx = strSource.IndexOf(strEnd, startIdx);
+                    if (endIdx > startIdx)
+                    {
+                        return strSource.Substring(startIdx, endIdx - startIdx);
+                    }
+                }
+                return String.Empty;
+            }
+
+            public void ExtractData(string source, string keyword1, string keyword2, string col)
+            {
+                if (!dataTable.Columns.Contains(col))
+                {
+                    dataTable.Columns.Add(col, typeof(int));
+                }
+                if (source.Contains(keyword1))
+                {
+                    string dt = getBetween(source, keyword1, keyword2);
+                    Int32.TryParse(dt, out int dtVal);
+                    DataRow row = dataTable.NewRow();
+                    row[col] = dtVal;
+                    dataTable.Rows.Add(row);
+                }
+
+                if (source.Contains("Receive Finished"))
+                {
+                    ReceiveCount++;
                 }
             }
-            return String.Empty;
-        }
 
-        private static int ReceiveCount = 0;
-        private static DataTable dataTable = new DataTable();
-
-        public static void InitDataTable()
-        {
-            dataTable.Columns.Add("SNR (unit)", typeof(int));
-            dataTable.Columns.Add("Receipt count", typeof(int));
-        }
-
-        public static void ExtractData(string source)
-        {
-            if (source.Contains("SNR "))
+            public void ExportExcel()
             {
-                string SNRstring = getBetween(source, "SNR ", " Payload");
-                Int32.TryParse(SNRstring, out int SNRval);
-                dataTable.Rows.Add(SNRval);
+                DataRow countReceipt = dataTable.NewRow();
+                countReceipt["Receipt count"] = ReceiveCount;
+                dataTable.Rows.Add(countReceipt);
+
+                IXLWorkbook wb = new XLWorkbook();
+                wb.Worksheets.Add(dataTable, "result");
+                wb.SaveAs(SaveDirectory + ExcelName);
             }
-
-            if (source.Contains("Receive Finished"))
-            {
-                ReceiveCount++;
-            }
-        }
-
-        public static void ExportExcel(string location, DataTable table)
-        {
-            DataRow countReceipt = dataTable.NewRow();
-            countReceipt["Receipt count"] = ReceiveCount;
-            dataTable.Rows.Add(countReceipt);
-
-            IXLWorkbook wb = new XLWorkbook();
-            wb.Worksheets.Add(table, "result");
-            wb.SaveAs(location);
         }
 
         public static void Read()
         {
-            InitDataTable();
+            DataPackage Dp = new DataPackage();
+            Dp.InitDataTable();
             while (_continue)
             {
                 try
                 {
                     string message = _serialPort.ReadLine();
                     Console.WriteLine(message);
-                    ExtractData(message);
+                    Dp.ExtractData(message, "SNR", "Payload", "SNR");
                 }
                 catch (TimeoutException) { }
             }
-            ExportExcel(SaveDirectory + ExcelName, dataTable);
+            Dp.ExportExcel();
         }
 
         public static string SetPortName(string defaultPortName)
