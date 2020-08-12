@@ -1,9 +1,9 @@
-﻿using System;
+﻿using ClosedXML.Excel;
+using System;
 using System.Data;
 using System.IO;
 using System.IO.Ports;
 using System.Threading;
-using ClosedXML.Excel;
 
 namespace COMPortReader
 {
@@ -11,13 +11,13 @@ namespace COMPortReader
     {
         private static bool _continue;
         private static SerialPort _serialPort;
-        static string ExcelName;
-        static string SaveDirectory;
+        private static string ExcelName;
+        private static string SaveDirectory;
 
         public static void Main()
         {
             string message;
-            
+
             StringComparer stringComparer = StringComparer.OrdinalIgnoreCase;
 
             Thread readThread = new Thread(Read);
@@ -32,9 +32,9 @@ namespace COMPortReader
             _serialPort.ReadTimeout = 500;
             _serialPort.WriteTimeout = 500;
 
-            // Set excel name
+            // Set excel name and save location
+            SaveDirectory = SetDirectory(Directory.GetDirectoryRoot(Directory.GetCurrentDirectory()));
             ExcelName = SetExcelName("test.xlsx");
-            SaveDirectory = SetDirectory(Directory.GetCurrentDirectory());
 
             _serialPort.Open();
             _continue = true;
@@ -74,43 +74,55 @@ namespace COMPortReader
             return String.Empty;
         }
 
-        static int ReceiveCount = 0;
+        private static int ReceiveCount = 0;
+        private static DataTable dataTable = new DataTable();
+
+        public static void InitDataTable()
+        {
+            dataTable.Columns.Add("SNR (unit)", typeof(int));
+            dataTable.Columns.Add("Receipt count", typeof(int));
+        }
+
+        public static void ExtractData(string source)
+        {
+            if (source.Contains("SNR "))
+            {
+                string SNRstring = getBetween(source, "SNR ", " Payload");
+                Int32.TryParse(SNRstring, out int SNRval);
+                dataTable.Rows.Add(SNRval);
+            }
+
+            if (source.Contains("Receive Finished"))
+            {
+                ReceiveCount++;
+            }
+        }
+
+        public static void ExportExcel(string location, DataTable table)
+        {
+            DataRow countReceipt = dataTable.NewRow();
+            countReceipt["Receipt count"] = ReceiveCount;
+            dataTable.Rows.Add(countReceipt);
+
+            IXLWorkbook wb = new XLWorkbook();
+            wb.Worksheets.Add(table, "result");
+            wb.SaveAs(location);
+        }
 
         public static void Read()
         {
-            DataTable mytable = new DataTable();
-            mytable.Columns.Add("SNR (unit)", typeof(int));
+            InitDataTable();
             while (_continue)
             {
                 try
                 {
                     string message = _serialPort.ReadLine();
                     Console.WriteLine(message);
-
-
-                    if (message.Contains("SNR "))
-                    {
-                        string SNRstring = getBetween(message, "SNR ", " Payload");
-                        int SNRval;
-                        Int32.TryParse(SNRstring, out SNRval);
-                        mytable.Rows.Add(SNRval);
-                    }
-
-                    if (message.Contains("Receive Finished"))
-                    {
-                        ReceiveCount++;
-                    }
-
+                    ExtractData(message);
                 }
                 catch (TimeoutException) { }
             }
-            mytable.Columns.Add("Receipt count", typeof(int));
-            DataRow countReceipt = mytable.NewRow();
-            countReceipt["Receipt count"] = ReceiveCount;
-            mytable.Rows.Add(countReceipt);
-            var wb = new XLWorkbook();
-            wb.Worksheets.Add(mytable, "result");
-            wb.SaveAs(SaveDirectory + ExcelName);
+            ExportExcel(SaveDirectory + ExcelName, dataTable);
         }
 
         public static string SetPortName(string defaultPortName)
