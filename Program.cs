@@ -62,9 +62,17 @@ namespace COMPortReader
             public static int ReceiveCount = 0;
             public static DataTable dataTable = new DataTable();
 
-            public void InitDataTable()
+            public static void ReceiptCount(string source)
             {
-                dataTable.Columns.Add("Receipt count", typeof(int));
+                if (!dataTable.Columns.Contains("Receipt count"))
+                {
+                    dataTable.Columns.Add("Receipt count", typeof(int));
+                }
+                if (source.Contains("Receive Finished"))
+                {
+                    ReceiveCount++;
+                }
+
             }
 
             public static string getBetween(string strSource, string strStart, string strEnd)
@@ -84,28 +92,42 @@ namespace COMPortReader
                 return String.Empty;
             }
 
-            public void ExtractData(string source, string keyword1, string keyword2, string col)
+            public static string GetData(string source, string keyword1, string keyword2, string col)
             {
                 if (!dataTable.Columns.Contains(col))
                 {
-                    dataTable.Columns.Add(col, typeof(int));
+                    dataTable.Columns.Add(col, typeof(string));
                 }
                 if (source.Contains(keyword1))
                 {
                     string dt = getBetween(source, keyword1, keyword2);
-                    Int32.TryParse(dt, out int dtVal);
-                    DataRow row = dataTable.NewRow();
-                    row[col] = dtVal;
-                    dataTable.Rows.Add(row);
-                }
-
-                if (source.Contains("Receive Finished"))
+                    //Int32.TryParse(dt, out int dtVal);
+                    //DataRow row = dataTable.NewRow();
+                    //row[col] = dtVal;
+                    //dataTable.Rows.InsertAt(row, dataTable.Columns.IndexOf(col));
+                    return dt;
+                }else
                 {
-                    ReceiveCount++;
+                    return null;
                 }
             }
 
-            public void ExportExcel()
+            public static void ExtractData(string source)
+            {
+                string[] data = new string[4];
+                data[0] = GetData(source, "RSSI:", "dBm", "RSSI (dBm)");
+                data[1]= GetData(source, "SNR:", "dB", "SNR (dB)");
+                data[2]= GetData(source, "Payload_size:", "bytes", "Payload Size (bytes)");
+                data[3] = GetData(source, "Payload_data:", ":End_payload_data", "Payload Data");
+                DataRow row = dataTable.NewRow();
+                for(int i = 0; i < 4; i++)
+                {
+                    row[i] = data[i];
+                }
+                dataTable.Rows.Add(row);
+            }
+
+                public static void ExportExcel()
             {
                 DataRow countReceipt = dataTable.NewRow();
                 countReceipt["Receipt count"] = ReceiveCount;
@@ -119,19 +141,23 @@ namespace COMPortReader
 
         public static void Read()
         {
-            DataPackage Dp = new DataPackage();
-            Dp.InitDataTable();
             while (_continue)
             {
                 try
                 {
                     string message = _serialPort.ReadLine();
                     Console.WriteLine(message);
-                    Dp.ExtractData(message, "SNR", "Payload", "SNR");
+                    DataPackage.ExtractData(message);
+                    /*Dp.GetData(message, "Payload number", ";", "Payload number");
+                    Dp.GetData(message, "RSSI", "dBm", "RSSI (dBm)");
+                    Dp.GetData(message, "SNR", "dB", "SNR (dB)");
+                    Dp.GetData(message, "Payload size", "bytes", "Payload Size (bytes)");
+                    Dp.GetData(message, "Payload data", ";", "Payload Data");*/
+                    DataPackage.ReceiptCount(message);
                 }
                 catch (TimeoutException) { }
             }
-            Dp.ExportExcel();
+            DataPackage.ExportExcel();
         }
 
         public static string SetPortName(string defaultPortName)
